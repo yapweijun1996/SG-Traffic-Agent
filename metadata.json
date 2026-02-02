@@ -1,0 +1,7 @@
+{
+  "name": "SG Traffic Agent",
+  "description": "Real-time Singapore traffic camera map with agentic insights, traffic scoring, and commute planning.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
