@@ -1,20 +1,27 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# SG-Traffic-Agent: Intelligent Singapore Traffic Monitoring
 
-# Run and deploy your AI Studio app
+**SG-Traffic-Agent** is an AI-powered traffic monitoring platform for Singapore. It integrates real-time camera feeds from LTA DataMall and utilizes Google Gemini AI for scene analysis, providing users with intuitive, real-time traffic assessments.
 
-This contains everything you need to run your app locally.
+## 🌟 Key Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1hhtkrqk8htdsHwSR84SJTY4HOBRGxw4A
+- 📸 **Real-time Traffic**: Access live CCTV feeds from major expressways across Singapore.
+- 🤖 **AI-Powered Analysis**: Automatically score and describe traffic conditions using Google Gemini AI.
+- 🗺️ **Interactive Map**: A Leaflet-based visualization that dynamically updates road segments based on congestion levels.
+- 📦 **Efficient Persistence**: Uses IndexedDB to cache analysis results, preserving data even after page refreshes.
+- ⚡ **CORS Proxy**: Built-in multi-strategy proxy fallback ensures reliable camera image loading.
 
-## Run Locally
+## 🚀 Quick Start
 
-**Prerequisites:**  Node.js
+### Prerequisites
+- **Node.js** (v18+ recommended)
+- **Gemini API Key** (Obtain from [Google AI Studio](https://aistudio.google.com/))
 
+### Installation
+1. **Navigate to Dev Directory**: `cd 0_development/SG-Traffic-Agent`
+2. **Install Dependencies**: `npm install`
+3. **Configure API Key**: Set `VITE_GEMINI_API_KEY` in `.env.local`
+4. **Run the App**: `npm run dev`
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+*Designed for safety and efficiency on Singapore roads.*
