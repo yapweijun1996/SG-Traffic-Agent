@@ -20,7 +20,7 @@ export const DEFAULT_PREFERENCES = {
   theme: 'light' as const,
   watchlist: [] as string[],
   modelId: 'gemini-flash-lite-latest',
-  apiKey: '',
+  apiKey: 'AIzaSyBh_K0_zmPUhvSBEPC63LMbnL8uq2Pzb6s',
 };
 
 // Singapore Bounds for initialization
