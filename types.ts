@@ -66,7 +66,6 @@ export enum ViewState {
   MAP = 'MAP',
   LIST = 'LIST',
   WATCHLIST = 'WATCHLIST',
-  EVENTS = 'EVENTS',
   SUMMARY = 'SUMMARY',
   SETTINGS = 'SETTINGS',
 }
@@ -78,4 +77,5 @@ export interface UserPreferences {
   autoRefresh: boolean;
   showHeatmap: boolean;
   modelId: string; // Selected Gemini Model ID
+  apiKey?: string; // Optional user-provided Gemini API Key
 }

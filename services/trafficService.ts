@@ -3,9 +3,6 @@ import { Camera, TrafficImageApiData, TrafficCameraRaw, TrafficScore, TrafficHis
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { DB } from '../utils/db';
 
-// Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 // Helper to convert Blob to Base64
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -23,7 +20,7 @@ function blobToBase64(blob: Blob): Promise<string> {
 // Helper to convert URL to Base64 (needed for Gemini inline data)
 // Includes CORS handling via multiple proxy fallbacks
 async function urlToBase64(url: string): Promise<string> {
-  
+
   // Strategy 1: Direct Fetch
   try {
     const response = await fetch(url, { mode: 'cors' });
@@ -44,7 +41,7 @@ async function urlToBase64(url: string): Promise<string> {
       return await blobToBase64(blob);
     }
   } catch (e) {
-     console.warn(`wsrv.nl failed for ${url}`);
+    console.warn(`wsrv.nl failed for ${url}`);
   }
 
   // Strategy 3: corsproxy.io
@@ -56,7 +53,7 @@ async function urlToBase64(url: string): Promise<string> {
       return await blobToBase64(blob);
     }
   } catch (e) {
-     console.warn(`corsproxy.io failed for ${url}`);
+    console.warn(`corsproxy.io failed for ${url}`);
   }
 
   // Strategy 4: allorigins.win
@@ -104,22 +101,27 @@ export const TrafficService = {
       // 1. Fetch from API
       const response = await fetch(API_URL);
       if (!response.ok) throw new Error('Network response was not ok');
-      
+
       const data: TrafficImageApiData = await response.json();
       const items = data.items[0]; // Get latest snapshot
-      
+
       if (!items) return Array.from(previousCameras.values());
 
       // 2. Process Data
       const processedCameras = items.cameras.map((raw) => {
         const prev = previousCameras.get(raw.camera_id);
-        
+
         let existingScore: TrafficScore | null = null;
         let history = prev ? [...prev.history] : [];
 
-        // Preserve score if image hasn't changed (MD5 check)
-        if (prev && prev.md5 === raw.image_metadata.md5 && prev.trafficScore) {
-           existingScore = prev.trafficScore;
+        // Preserve score even if image changed, valid for 10 minutes
+        if (prev && prev.trafficScore) {
+          const age = new Date().getTime() - new Date(prev.trafficScore.analyzedAt).getTime();
+          const isFresh = age < 10 * 60 * 1000; // 10 minutes validity
+
+          if (isFresh) {
+            existingScore = prev.trafficScore;
+          }
         }
 
         return {
@@ -135,31 +137,51 @@ export const TrafficService = {
         };
       });
 
-      // 3. Cache to IndexedDB (Fire and forget)
-      DB.saveCameras(processedCameras).catch(e => console.error("Failed to cache cameras", e));
+      // 3. Cache to IndexedDB (Wait for it)
+      await DB.saveCameras(processedCameras).catch(e => console.error("Failed to cache cameras", e));
 
       return processedCameras;
 
     } catch (error) {
       console.error('Error fetching traffic data:', error);
-      
+
       // 4. Fallback: If network fails, return previously known state or DB state
       // If previousCameras is empty (first load), try loading from DB again just in case
       if (previousCameras.size === 0) {
-         try {
-           return await DB.getCameras();
-         } catch (dbError) {
-           throw error; // If both fail, throw original error
-         }
+        try {
+          return await DB.getCameras();
+        } catch (dbError) {
+          throw error; // If both fail, throw original error
+        }
       }
-      
+
       throw error;
     }
   },
 
   // REAL AI Analysis using Gemini
-  analyzeCameraWithGemini: async (camera: Camera, modelId: string = 'gemini-3-flash-preview'): Promise<Camera> => {
+  analyzeCameraWithGemini: async (camera: Camera, modelId: string = 'gemini-3-flash-preview', userApiKey?: string): Promise<Camera> => {
     try {
+      // 1. Get potential keys from various sources
+      // We use explicit references so Vite's define/replacement works correctly
+      const viteApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY;
+      const processApiKey = typeof process !== 'undefined' ? (process.env?.GEMINI_API_KEY || process.env?.API_KEY) : undefined;
+
+      const candidates = [userApiKey, viteApiKey, processApiKey];
+      const actualKey = candidates.find(k =>
+        k && typeof k === 'string' && k.trim().length > 10 && k !== 'PLACEHOLDER_API_KEY' && k !== 'undefined'
+      );
+
+      console.debug(`[TrafficService] Analysis trigger for ${camera.id}. Key Source: ${userApiKey ? 'User' : 'System'}. Key fragment: ${actualKey ? actualKey.substring(0, 4) + '...' : 'NONE'}`);
+
+      if (!actualKey) {
+        throw new Error("Gemini API Key is missing. Please go to the 'Settings' tab and enter a valid API Key.");
+      }
+
+
+      // Initialize AI inside the function to support dynamic key switching
+      const ai = new GoogleGenAI({ apiKey: actualKey });
+
       const base64Image = await urlToBase64(camera.imageUrl);
 
       const scoreSchema: Schema = {
@@ -174,11 +196,12 @@ export const TrafficService = {
       };
 
       const response = await ai.models.generateContent({
-        model: modelId, 
+        model: modelId,
         contents: {
           parts: [
             { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-            { text: `You are a Singapore Land Transport Authority traffic analyst. 
+            {
+              text: `You are a Singapore Land Transport Authority traffic analyst. 
                      Analyze this CCTV footage for traffic density. 
                      Singapore roads are left-hand drive. 
                      Ignore parked cars on shoulders if any.
@@ -193,22 +216,22 @@ export const TrafficService = {
         }
       });
 
-      const result = JSON.parse(response.text || "{}");
-      
+      const parsedResult = JSON.parse(response.text || "{}");
+
       const newScore: TrafficScore = {
-        score: result.score || 0,
+        score: parsedResult.score || 0,
         confidence: 0.9,
-        trend: result.trend || 'FLAT',
+        trend: parsedResult.trend || 'FLAT',
         delta: 0,
-        description: result.description || "Traffic analyzed by Gemini AI.",
-        label: result.label || 'CLEAR',
+        description: parsedResult.description || "Traffic analyzed by Gemini AI.",
+        label: parsedResult.label || 'CLEAR',
         analyzedAt: new Date().toISOString()
       };
 
       // Update history
       const newHistory = [...camera.history, { timestamp: new Date().toISOString(), score: newScore.score }];
       if (newHistory.length > 10) newHistory.shift();
-      
+
       // Calculate Delta if we have history
       if (newHistory.length >= 2) {
         newScore.delta = newScore.score - newHistory[newHistory.length - 2].score;
@@ -227,26 +250,27 @@ export const TrafficService = {
 
     } catch (error) {
       console.error(`Gemini Analysis failed for ${camera.id} with model ${modelId}:`, error);
-      return camera;
+      throw error; // Propagate error so UI can show API Key error if needed
     }
   },
 
   // Batch Analysis with Concurrency Control
   analyzeBatch: async (
-    cameras: Camera[], 
+    cameras: Camera[],
     onProgress: (updatedCamera: Camera) => void,
     onItemComplete?: () => void,
-    modelId: string = 'gemini-3-flash-preview'
+    modelId: string = 'gemini-3-flash-preview',
+    apiKey?: string
   ) => {
     // Process in chunks to respect browser/API limits
-    const CHUNK_SIZE = 3; 
-    
+    const CHUNK_SIZE = 3;
+
     for (let i = 0; i < cameras.length; i += CHUNK_SIZE) {
       const chunk = cameras.slice(i, i + CHUNK_SIZE);
-      
+
       await Promise.all(chunk.map(async (camera) => {
         try {
-          const updated = await TrafficService.analyzeCameraWithGemini(camera, modelId);
+          const updated = await TrafficService.analyzeCameraWithGemini(camera, modelId, apiKey);
           // Only trigger progress update if we actually got a score (analysis succeeded)
           if (updated.trafficScore) {
             onProgress(updated);
@@ -257,7 +281,7 @@ export const TrafficService = {
           if (onItemComplete) onItemComplete();
         }
       }));
-      
+
       // Small breather between chunks to avoid rate limiting
       if (i + CHUNK_SIZE < cameras.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -268,7 +292,7 @@ export const TrafficService = {
   // Planner Layer: Analyze corridors based on available scores
   analyzeCorridors: (cameras: Camera[]): Corridor[] => {
     return CORRIDOR_CONFIG.map(config => {
-      const corridorCameras = cameras.filter(c => 
+      const corridorCameras = cameras.filter(c =>
         config.pattern.test(c.locationName) || config.pattern.test(c.id)
       );
 
@@ -276,7 +300,7 @@ export const TrafficService = {
 
       // Only count cameras that have been analyzed
       const analyzedCameras = corridorCameras.filter(c => c.trafficScore !== null);
-      
+
       if (analyzedCameras.length === 0) {
         return {
           id: config.id,
@@ -290,10 +314,10 @@ export const TrafficService = {
 
       const totalScore = analyzedCameras.reduce((sum, c) => sum + (c.trafficScore?.score || 0), 0);
       const avgScore = Math.round(totalScore / analyzedCameras.length);
-      
+
       const upVotes = analyzedCameras.filter(c => c.trafficScore?.trend === 'UP').length;
       const downVotes = analyzedCameras.filter(c => c.trafficScore?.trend === 'DOWN').length;
-      
+
       let trend: Corridor['trend'] = 'STABLE';
       if (upVotes > downVotes) trend = 'WORSENING';
       else if (downVotes > upVotes) trend = 'IMPROVING';

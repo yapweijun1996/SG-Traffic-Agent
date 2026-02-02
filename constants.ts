@@ -19,7 +19,8 @@ export const DEFAULT_PREFERENCES = {
   showHeatmap: false,
   theme: 'light' as const,
   watchlist: [] as string[],
-  modelId: 'gemini-3-flash-preview',
+  modelId: 'gemini-flash-lite-latest',
+  apiKey: '',
 };
 
 // Singapore Bounds for initialization

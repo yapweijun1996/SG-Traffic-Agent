@@ -20,6 +20,7 @@ const MapView: React.FC<MapViewProps> = ({ cameras, onSelectCamera, userLocation
     mapInstance.current = L.map(mapContainer.current, {
       zoomControl: false,
       attributionControl: false,
+      preferCanvas: false,
     }).setView([1.3521, 103.8198], 11);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -32,8 +33,14 @@ const MapView: React.FC<MapViewProps> = ({ cameras, onSelectCamera, userLocation
     L.control.zoom({ position: 'topright' }).addTo(mapInstance.current);
 
     return () => {
-      mapInstance.current?.remove();
-      mapInstance.current = null;
+      // Cleanup: remove all markers and map instance
+      markersRef.current.forEach(marker => marker.remove());
+      markersRef.current.clear();
+
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
     };
   }, []);
 
@@ -55,37 +62,42 @@ const MapView: React.FC<MapViewProps> = ({ cameras, onSelectCamera, userLocation
     // Add/Update markers
     cameras.forEach(camera => {
       const existing = markersRef.current.get(camera.id);
-      
-      // Gray if not analyzed yet
+
+      // Color based on traffic score
       const getColor = (score: number | undefined) => {
-        if (score === undefined) return '#94a3b8'; // Slate-400
-        if (score >= 80) return '#ef4444'; // Red-500
-        if (score >= 50) return '#f97316'; // Orange-500
-        return '#22c55e'; // Green-500
+        if (score === undefined) return '#94a3b8'; // Slate-400 (not analyzed)
+        if (score >= 80) return '#ef4444'; // Red-500 (heavy congestion)
+        if (score >= 50) return '#f97316'; // Orange-500 (moderate)
+        return '#22c55e'; // Green-500 (clear)
       };
 
       const score = camera.trafficScore?.score;
       const color = getColor(score);
-      
+
       if (existing) {
+        // Update existing marker color
         existing.setStyle({ fillColor: color, color: '#ffffff' });
       } else {
+        // Create new marker
         const marker = L.circleMarker([camera.latitude, camera.longitude], {
-          radius: 8,
+          radius: 10,
           fillColor: color,
           color: '#ffffff',
-          weight: 2,
+          weight: 3,
           opacity: 1,
-          fillOpacity: 0.9,
+          fillOpacity: 0.85,
         }).addTo(map);
 
         marker.on('click', () => onSelectCamera(camera));
-        // Add a simple tooltip
-        const tooltipText = score !== undefined ? `Score: ${score}` : 'Tap to analyze';
-        marker.bindTooltip(tooltipText, { 
-          direction: 'top', 
-          offset: [0, -10],
-          className: 'px-2 py-1 bg-slate-800 text-white text-xs rounded shadow-lg border-0'
+
+        // Tooltip with camera name and score
+        const tooltipText = score !== undefined
+          ? `${camera.locationName}: ${score}`
+          : camera.locationName;
+        marker.bindTooltip(tooltipText, {
+          direction: 'top',
+          offset: [0, -12],
+          className: 'leaflet-tooltip-custom'
         });
 
         markersRef.current.set(camera.id, marker);
@@ -93,10 +105,10 @@ const MapView: React.FC<MapViewProps> = ({ cameras, onSelectCamera, userLocation
     });
   }, [cameras, onSelectCamera]);
 
-  // Handle User Location
+  // Handle User Location (future feature)
   useEffect(() => {
     if (userLocation && mapInstance.current) {
-      // Could add a specialized user marker here
+      // Could add a user location marker here
     }
   }, [userLocation]);
 

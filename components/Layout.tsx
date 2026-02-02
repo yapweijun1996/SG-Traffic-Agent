@@ -13,7 +13,6 @@ const Layout: React.FC<LayoutProps> = ({ currentView, setView, children }) => {
     { id: ViewState.MAP, label: 'Map', icon: Map },
     { id: ViewState.LIST, label: 'List', icon: List },
     { id: ViewState.WATCHLIST, label: 'Watchlist', icon: Star },
-    { id: ViewState.EVENTS, label: 'Events', icon: AlertTriangle },
     { id: ViewState.SUMMARY, label: 'Summary', icon: FileText },
     { id: ViewState.SETTINGS, label: 'Settings', icon: Settings },
   ];
@@ -32,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ currentView, setView, children }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-           {/* Placeholder for future top-bar actions */}
+          {/* Placeholder for future top-bar actions */}
         </div>
       </header>
 
@@ -51,9 +50,8 @@ const Layout: React.FC<LayoutProps> = ({ currentView, setView, children }) => {
               <button
                 key={item.id}
                 onClick={() => setView(item.id)}
-                className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${
-                  isActive ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'
-                }`}
+                className={`flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors ${isActive ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'
+                  }`}
               >
                 <Icon className={`w-6 h-6 ${isActive ? 'fill-current opacity-20' : ''}`} strokeWidth={isActive ? 2.5 : 2} />
                 <span className="text-[10px] font-medium">{item.label}</span>
