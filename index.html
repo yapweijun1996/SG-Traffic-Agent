@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SG Traffic Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <style>
+    /* Custom scrollbar for webkit */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+
+    /* Leaflet marker fixes */
+    .leaflet-pane {
+      z-index: 400 !important;
+    }
+
+    .leaflet-marker-pane {
+      z-index: 600 !important;
+    }
+
+    .leaflet-overlay-pane {
+      z-index: 400 !important;
+    }
+
+    .leaflet-shadow-pane {
+      z-index: 500 !important;
+    }
+
+    .leaflet-tooltip-pane {
+      z-index: 650 !important;
+    }
+
+    /* Ensure circle markers are visible */
+    .leaflet-interactive {
+      cursor: pointer;
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index-CFMylPkX.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-I2_xYhIh.css">
+</head>
+
+<body class="bg-slate-50 text-slate-900 overflow-hidden">
+  <div id="root" class="h-full w-full"></div>
+</body>
+
+</html>
