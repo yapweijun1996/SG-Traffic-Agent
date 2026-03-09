@@ -7,10 +7,7 @@ export const REFRESH_INTERVALS = {
 };
 
 export const AVAILABLE_MODELS = [
-  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Recommended)' },
-  { id: 'gemini-flash-lite-latest', name: 'Gemini 2.5 Flash Lite (Fastest)' },
-  { id: 'gemini-flash-latest', name: 'Gemini 2.5 Flash' },
-  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro (High Intelligence)' },
+  { id: 'gemma-3-27b-it', name: 'Gemma 3 27B IT (Sample Default)' },
 ];
 
 export const DEFAULT_PREFERENCES = {
@@ -19,8 +16,8 @@ export const DEFAULT_PREFERENCES = {
   showHeatmap: false,
   theme: 'light' as const,
   watchlist: [] as string[],
-  modelId: 'gemini-flash-lite-latest',
-  apiKey: 'AIzaSyBh_K0_zmPUhvSBEPC63LMbnL8uq2Pzb6s',
+  modelId: 'gemma-3-27b-it',
+  apiKey: '',
 };
 
 // Singapore Bounds for initialization

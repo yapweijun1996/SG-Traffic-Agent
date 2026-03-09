@@ -378,7 +378,7 @@ const App: React.FC = () => {
                   <Cpu className="w-5 h-5 text-blue-600" />
                   <span className="font-semibold text-slate-800">AI Model</span>
                 </div>
-                <p className="text-xs text-slate-500 mb-2">Select the Gemini model used for traffic analysis.</p>
+                <p className="text-xs text-slate-500 mb-2">This app uses the cloned sample runtime with `gemma-3-27b-it` for traffic analysis.</p>
                 <select
                   value={preferences.modelId}
                   onChange={(e) => {
@@ -402,10 +402,10 @@ const App: React.FC = () => {
                   <div className="bg-amber-100 p-1 rounded-md text-amber-600">
                     <Cpu className="w-4 h-4" />
                   </div>
-                  <span className="font-semibold text-slate-800">Gemini API Key</span>
+                  <span className="font-semibold text-slate-800">Google AI Studio API Key</span>
                 </div>
                 <p className="text-xs text-slate-500 mb-2">
-                  Enter your Gemini API key to enable AI traffic analysis. You can get one from the <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.
+                  Enter your Google AI Studio API key to enable traffic analysis. The cloned sample runtime uses `gemma-3-27b-it` with rotated keys from `gemma_code.jsonl` by default.
                 </p>
                 <div className="relative">
                   <input

@@ -1,7 +1,7 @@
 import { API_URL, ROAD_NAMES, CORRIDOR_CONFIG } from '../constants';
-import { Camera, TrafficImageApiData, TrafficCameraRaw, TrafficScore, TrafficHistoryEntry, Corridor } from '../types';
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { Camera, TrafficImageApiData, TrafficCameraRaw, TrafficScore, Corridor } from '../types';
 import { DB } from '../utils/db';
+import { callGeminiAPI, extractGeminiText } from './geminiTransport';
 
 // Helper to convert Blob to Base64
 function blobToBase64(blob: Blob): Promise<string> {
@@ -84,6 +84,22 @@ function getCameraName(id: string): string {
   return `Camera ${id}`;
 }
 
+function parseTrafficAnalysis(rawText: string): Record<string, any> {
+  const text = rawText.trim();
+  if (!text) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error('Gemma returned a non-JSON response.');
+    }
+    return JSON.parse(text.slice(start, end + 1));
+  }
+}
+
 export const TrafficService = {
   // Load cached data for instant startup
   getCachedCameras: async (): Promise<Camera[]> => {
@@ -160,63 +176,45 @@ export const TrafficService = {
   },
 
   // REAL AI Analysis using Gemini
-  analyzeCameraWithGemini: async (camera: Camera, modelId: string = 'gemini-3-flash-preview', userApiKey?: string): Promise<Camera> => {
+  analyzeCameraWithGemini: async (camera: Camera, modelId: string = 'gemma-3-27b-it', userApiKey?: string): Promise<Camera> => {
     try {
-      // 1. Get potential keys from various sources
-      // We use explicit references so Vite's define/replacement works correctly
       const viteApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY;
       const processApiKey = typeof process !== 'undefined' ? (process.env?.GEMINI_API_KEY || process.env?.API_KEY) : undefined;
 
-      const candidates = [userApiKey, viteApiKey, processApiKey];
-      const actualKey = candidates.find(k =>
-        k && typeof k === 'string' && k.trim().length > 10 && k !== 'PLACEHOLDER_API_KEY' && k !== 'undefined'
-      );
-
-      console.debug(`[TrafficService] Analysis trigger for ${camera.id}. Key Source: ${userApiKey ? 'User' : 'System'}. Key fragment: ${actualKey ? actualKey.substring(0, 4) + '...' : 'NONE'}`);
-
-      if (!actualKey) {
-        throw new Error("Gemini API Key is missing. Please go to the 'Settings' tab and enter a valid API Key.");
-      }
-
-
-      // Initialize AI inside the function to support dynamic key switching
-      const ai = new GoogleGenAI({ apiKey: actualKey });
-
       const base64Image = await urlToBase64(camera.imageUrl);
 
-      const scoreSchema: Schema = {
-        type: Type.OBJECT,
-        properties: {
-          score: { type: Type.INTEGER, description: "0-100 traffic density score. 0=Empty, 100=Gridlock." },
-          label: { type: Type.STRING, enum: ['CLEAR', 'MODERATE', 'HEAVY', 'CONGESTED'] },
-          description: { type: Type.STRING, description: "Short, punchy analysis of the visual traffic situation." },
-          trend: { type: Type.STRING, enum: ['UP', 'DOWN', 'FLAT'], description: "Visual estimation of flow. If cars are stopped, trend is worsening (UP)." }
-        },
-        required: ["score", "label", "description", "trend"]
-      };
-
-      const response = await ai.models.generateContent({
+      const response = await callGeminiAPI({
         model: modelId,
-        contents: {
-          parts: [
-            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-            {
-              text: `You are a Singapore Land Transport Authority traffic analyst. 
-                     Analyze this CCTV footage for traffic density. 
-                     Singapore roads are left-hand drive. 
-                     Ignore parked cars on shoulders if any.
-                     Focus on the main carriageway.
-                     Return a JSON object with a traffic score (0-100).` }
-          ]
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+          {
+            text: `You are a Singapore Land Transport Authority traffic analyst.
+Analyze this CCTV footage for traffic density.
+Singapore roads are left-hand drive.
+Ignore parked cars on shoulders if any.
+Focus on the main carriageway.
+Be precise and conservative with high congestion scores.
+Respond using only this JSON object format:
+{"score":0,"label":"CLEAR","description":"brief analysis","trend":"FLAT"}
+
+Rules:
+- score must be an integer from 0 to 100
+- label must be one of CLEAR, MODERATE, HEAVY, CONGESTED
+- trend must be one of UP, DOWN, FLAT
+- description must be short and specific
+- do not wrap the JSON in markdown or explanation`
+          }
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.95,
+          topK: 40,
+          maxOutputTokens: 256,
         },
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: scoreSchema,
-          systemInstruction: "You are a precise traffic monitoring AI. Be conservative with high scores."
-        }
+        fallbackKeys: [userApiKey, viteApiKey, processApiKey],
       });
 
-      const parsedResult = JSON.parse(response.text || "{}");
+      const parsedResult = parseTrafficAnalysis(extractGeminiText(response) || '');
 
       const newScore: TrafficScore = {
         score: parsedResult.score || 0,
@@ -250,6 +248,9 @@ export const TrafficService = {
 
     } catch (error) {
       console.error(`Gemini Analysis failed for ${camera.id} with model ${modelId}:`, error);
+      if (error instanceof Error && error.message.includes('Gemini API keys are unavailable')) {
+        throw new Error("Gemini API keys are missing. Add encrypted keys to gemma_code.jsonl or provide a fallback key in Settings.");
+      }
       throw error; // Propagate error so UI can show API Key error if needed
     }
   },
@@ -259,7 +260,7 @@ export const TrafficService = {
     cameras: Camera[],
     onProgress: (updatedCamera: Camera) => void,
     onItemComplete?: () => void,
-    modelId: string = 'gemini-3-flash-preview',
+    modelId: string = 'gemma-3-27b-it',
     apiKey?: string
   ) => {
     // Process in chunks to respect browser/API limits

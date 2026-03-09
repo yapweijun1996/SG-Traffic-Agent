@@ -1,5 +1,5 @@
 import { UserPreferences } from '../types';
-import { DEFAULT_PREFERENCES } from '../constants';
+import { AVAILABLE_MODELS, DEFAULT_PREFERENCES } from '../constants';
 
 const KEYS = {
   WATCHLIST: 'sg_traffic_agent_watchlist',
@@ -24,7 +24,9 @@ export const Storage = {
   getPreferences: (): UserPreferences => {
     try {
       const stored = localStorage.getItem(KEYS.PREFERENCES);
-      return stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
+      const merged = stored ? { ...DEFAULT_PREFERENCES, ...JSON.parse(stored) } : DEFAULT_PREFERENCES;
+      const hasValidModel = AVAILABLE_MODELS.some(model => model.id === merged.modelId);
+      return hasValidModel ? merged : DEFAULT_PREFERENCES;
     } catch (e) {
       return DEFAULT_PREFERENCES;
     }
