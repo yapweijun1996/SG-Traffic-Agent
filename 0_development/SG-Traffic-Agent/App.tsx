@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Layout from './components/Layout';
 import MapView from './components/MapView';
 import CameraList from './components/CameraList';
@@ -7,7 +7,7 @@ import { ViewState, Camera, UserPreferences, Corridor } from './types';
 import { TrafficService } from './services/trafficService';
 import { Storage } from './utils/storage';
 import { DB } from './utils/db';
-import { DEFAULT_PREFERENCES, AVAILABLE_MODELS } from './constants';
+import { DEFAULT_PREFERENCES, AVAILABLE_MODELS, GEMINI_USER_KEY_MODELS, GEMMA_DEFAULT_MODEL } from './constants';
 import { AlertTriangle, Loader2, ArrowUpRight, ArrowDownRight, Minus, Route, Cpu, ShieldCheck } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -20,6 +20,7 @@ const App: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
 
   // Batch Analysis State
   const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false);
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
   const [watchlistIds, setWatchlistIds] = useState<string[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<Camera | null>(null);
+  const hasAutoStartedBatchAnalysis = useRef(false);
 
   // --- Initialization & Data Fetching ---
 
@@ -61,7 +63,9 @@ const App: React.FC = () => {
       } catch (e) {
         console.error("Failed to load initial data", e);
         // Fallback to basic fetch
-        fetchData();
+        await fetchData();
+      } finally {
+        setHasCompletedInitialLoad(true);
       }
     };
 
@@ -211,6 +215,28 @@ const App: React.FC = () => {
   const analyzedCount = useMemo(() => {
     return cameraList.filter(c => c.trafficScore !== null).length;
   }, [cameraList]);
+
+  const hasValidUserApiKey = useMemo(() => {
+    const key = preferences.apiKey?.trim() || '';
+    return key.length > 10 && key !== 'PLACEHOLDER_API_KEY' && key !== 'undefined';
+  }, [preferences.apiKey]);
+
+  const effectiveModelId = useMemo(() => {
+    if (GEMINI_USER_KEY_MODELS.has(preferences.modelId) && !hasValidUserApiKey) {
+      return GEMMA_DEFAULT_MODEL;
+    }
+    return preferences.modelId;
+  }, [preferences.modelId, hasValidUserApiKey]);
+
+  useEffect(() => {
+    if (hasAutoStartedBatchAnalysis.current) return;
+    if (!hasCompletedInitialLoad || isLoading || isBatchAnalyzing) return;
+    if (effectiveModelId !== GEMMA_DEFAULT_MODEL) return;
+    if (cameraList.length === 0) return;
+
+    hasAutoStartedBatchAnalysis.current = true;
+    handleBatchAnalyze(cameraList);
+  }, [cameraList, effectiveModelId, handleBatchAnalyze, hasCompletedInitialLoad, isBatchAnalyzing, isLoading]);
 
   // --- Render Views ---
 
@@ -378,7 +404,7 @@ const App: React.FC = () => {
                   <Cpu className="w-5 h-5 text-blue-600" />
                   <span className="font-semibold text-slate-800">AI Model</span>
                 </div>
-                <p className="text-xs text-slate-500 mb-2">This app uses the cloned sample runtime with `gemma-3-27b-it` for traffic analysis.</p>
+                <p className="text-xs text-slate-500 mb-2">Choose a Gemini model to use your own local API key. Without a valid local key, analysis automatically falls back to `gemma-3-27b-it` from `gemma_code.jsonl`.</p>
                 <select
                   value={preferences.modelId}
                   onChange={(e) => {
@@ -394,6 +420,9 @@ const App: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <div className="text-[11px] text-slate-500">
+                  Active runtime model: <span className="font-semibold text-slate-700">{effectiveModelId}</span>
+                </div>
               </div>
 
               {/* API Key Setup */}
@@ -405,7 +434,7 @@ const App: React.FC = () => {
                   <span className="font-semibold text-slate-800">Google AI Studio API Key</span>
                 </div>
                 <p className="text-xs text-slate-500 mb-2">
-                  Enter your Google AI Studio API key to enable traffic analysis. The cloned sample runtime uses `gemma-3-27b-it` with rotated keys from `gemma_code.jsonl` by default.
+                  Enter your Google AI Studio API key to use Gemini from this browser and keep it in local storage. If the key is missing or invalid, the app defaults to the Gemma runtime and rotated keys from `gemma_code.jsonl`.
                 </p>
                 <div className="relative">
                   <input
@@ -419,16 +448,16 @@ const App: React.FC = () => {
                     placeholder="Enter your API Key"
                     className="w-full p-2 pr-10 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   />
-                  {preferences.apiKey && (
+                  {hasValidUserApiKey && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
                       <ShieldCheck className="w-4 h-4" />
                     </div>
                   )}
                 </div>
-                {!preferences.apiKey && (
+                {!hasValidUserApiKey && (
                   <div className="flex items-center gap-1.5 mt-1 text-amber-600 bg-amber-50 p-2 rounded-md border border-amber-100">
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-bold uppercase tracking-tight">AI Offline: Key Required</span>
+                    <span className="text-[10px] font-bold uppercase tracking-tight">No Valid Local Key: Using Gemma Fallback</span>
                   </div>
                 )}
               </div>

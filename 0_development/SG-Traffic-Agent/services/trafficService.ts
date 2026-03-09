@@ -1,4 +1,4 @@
-import { API_URL, ROAD_NAMES, CORRIDOR_CONFIG } from '../constants';
+import { API_URL, ROAD_NAMES, CORRIDOR_CONFIG, GEMMA_DEFAULT_MODEL, GEMINI_USER_KEY_MODELS } from '../constants';
 import { Camera, TrafficImageApiData, TrafficCameraRaw, TrafficScore, Corridor } from '../types';
 import { DB } from '../utils/db';
 import { callGeminiAPI, extractGeminiText } from './geminiTransport';
@@ -85,7 +85,10 @@ function getCameraName(id: string): string {
 }
 
 function parseTrafficAnalysis(rawText: string): Record<string, any> {
-  const text = rawText.trim();
+  const text = rawText
+    .replace(/```json\s*/gi, '')
+    .replace(/```/g, '')
+    .trim();
   if (!text) return {};
 
   try {
@@ -98,6 +101,78 @@ function parseTrafficAnalysis(rawText: string): Record<string, any> {
     }
     return JSON.parse(text.slice(start, end + 1));
   }
+}
+
+function normalizeUserApiKey(key?: string): string | null {
+  if (!key || typeof key !== 'string') return null;
+  const trimmed = key.trim();
+  if (trimmed.length <= 10 || trimmed === 'PLACEHOLDER_API_KEY' || trimmed === 'undefined') {
+    return null;
+  }
+  return trimmed;
+}
+
+function buildTrafficAnalysisParts(base64Image: string) {
+  return [
+    { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
+    {
+      text: `Rate traffic congestion from this single Singapore road CCTV image.
+Score the worst affected visible main carriageway direction, not the average of both directions.
+If one carriageway is heavily queued while the other still moves, score from the queued carriageway.
+Ignore shoulders, slip roads unless they block the mainline, parked vehicles, and tiny distant vehicles.
+Singapore roads are left-hand drive.
+
+Work through this checklist internally before answering:
+1. Identify the main visible carriageway directions.
+2. Pick the worst affected direction only.
+3. Check for queue length, brake-light density, stopped vehicles, cones, officers, or blocked lanes.
+4. Decide whether traffic is free flow, dense but moving, queued, stop-go, or near standstill.
+5. Apply the scoring guide to that worst affected direction.
+6. Map the score to the label and infer trend from visible queue growth or clearing.
+Do not reveal this reasoning. Output only the final JSON object.
+
+Visual rules:
+- Long dense queue of many vehicles in one direction = HEAVY or CONGESTED
+- Mostly red brake lights or bumper-to-bumper spacing = HEAVY or CONGESTED
+- Officers, cones, stopped vehicles, or blocked lanes on the carriageway = incident; do not score below 70 if upstream traffic is queueing
+- Near standstill or tailback through most of the visible direction = 80 to 100
+- Free flow requires healthy spacing and no meaningful queue in the scored direction
+
+Score guide:
+- 0 to 19: almost empty or very light free flow
+- 20 to 34: light flow with healthy gaps
+- 35 to 49: moderate moving traffic with some compression
+- 50 to 69: heavy moving traffic or clear queue
+- 70 to 84: sustained queue / stop-go / incident spillback
+- 85 to 100: near standstill or severe lane-blocking tailback
+
+Label mapping:
+CLEAR for 0-24
+MODERATE for 25-44
+HEAVY for 45-69
+CONGESTED for 70-100
+
+Trend guidance:
+UP if a visible queue tail, brake-light compression, incident spillback, or lane blockage suggests worsening
+DOWN if a queue is clearly clearing and spacing is reopening
+otherwise FLAT
+
+Description requirements:
+- 6 to 12 words
+- mention the dominant problem: queue, blockage, lane closure, dense but moving, or checkpoint tailback
+- do not guess road names, destinations, or locations not directly visible
+
+Return exactly one JSON object:
+{"score":0,"label":"CLEAR","description":"free flow with wide gaps","trend":"FLAT"}
+
+Rules:
+- score must be an integer from 0 to 100
+- label must be CLEAR, MODERATE, HEAVY, or CONGESTED
+- trend must be UP, DOWN, or FLAT
+- no markdown
+- no extra explanation`
+    }
+  ];
 }
 
 export const TrafficService = {
@@ -176,43 +251,45 @@ export const TrafficService = {
   },
 
   // REAL AI Analysis using Gemini
-  analyzeCameraWithGemini: async (camera: Camera, modelId: string = 'gemma-3-27b-it', userApiKey?: string): Promise<Camera> => {
+  analyzeCameraWithGemini: async (camera: Camera, modelId: string = GEMMA_DEFAULT_MODEL, userApiKey?: string): Promise<Camera> => {
     try {
-      const viteApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.VITE_API_KEY;
-      const processApiKey = typeof process !== 'undefined' ? (process.env?.GEMINI_API_KEY || process.env?.API_KEY) : undefined;
-
+      const validUserKey = normalizeUserApiKey(userApiKey);
+      const wantsGeminiUserModel = GEMINI_USER_KEY_MODELS.has(modelId);
       const base64Image = await urlToBase64(camera.imageUrl);
+      const parts = buildTrafficAnalysisParts(base64Image);
+      const generationConfig = {
+        temperature: 0.1,
+        topP: 0.9,
+        topK: 20,
+        ...(wantsGeminiUserModel ? { maxOutputTokens: 128 } : {}),
+      };
 
-      const response = await callGeminiAPI({
-        model: modelId,
-        parts: [
-          { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-          {
-            text: `You are a Singapore Land Transport Authority traffic analyst.
-Analyze this CCTV footage for traffic density.
-Singapore roads are left-hand drive.
-Ignore parked cars on shoulders if any.
-Focus on the main carriageway.
-Be precise and conservative with high congestion scores.
-Respond using only this JSON object format:
-{"score":0,"label":"CLEAR","description":"brief analysis","trend":"FLAT"}
+      let response;
 
-Rules:
-- score must be an integer from 0 to 100
-- label must be one of CLEAR, MODERATE, HEAVY, CONGESTED
-- trend must be one of UP, DOWN, FLAT
-- description must be short and specific
-- do not wrap the JSON in markdown or explanation`
-          }
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 256,
-        },
-        fallbackKeys: [userApiKey, viteApiKey, processApiKey],
-      });
+      if (wantsGeminiUserModel && validUserKey) {
+        try {
+          response = await callGeminiAPI({
+            model: modelId,
+            parts,
+            generationConfig,
+            primaryKeys: [validUserKey],
+            fallbackKeys: [],
+          });
+        } catch (geminiError) {
+          console.warn(`[TrafficService] Falling back to ${GEMMA_DEFAULT_MODEL} after Gemini user-key failure for ${camera.id}`, geminiError);
+          response = await callGeminiAPI({
+            model: GEMMA_DEFAULT_MODEL,
+            parts,
+            generationConfig,
+          });
+        }
+      } else {
+        response = await callGeminiAPI({
+          model: GEMMA_DEFAULT_MODEL,
+          parts,
+          generationConfig,
+        });
+      }
 
       const parsedResult = parseTrafficAnalysis(extractGeminiText(response) || '');
 
@@ -260,7 +337,7 @@ Rules:
     cameras: Camera[],
     onProgress: (updatedCamera: Camera) => void,
     onItemComplete?: () => void,
-    modelId: string = 'gemma-3-27b-it',
+    modelId: string = GEMMA_DEFAULT_MODEL,
     apiKey?: string
   ) => {
     // Process in chunks to respect browser/API limits

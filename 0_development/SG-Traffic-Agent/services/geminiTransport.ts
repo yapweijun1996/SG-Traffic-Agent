@@ -25,6 +25,7 @@ interface GenerateContentRequest {
   parts: GenerateContentPart[];
   generationConfig?: Record<string, unknown>;
   systemInstruction?: string;
+  primaryKeys?: string[];
   fallbackKeys?: string[];
 }
 
@@ -158,13 +159,14 @@ export async function callGeminiAPI({
   parts,
   generationConfig,
   systemInstruction,
+  primaryKeys = [],
   fallbackKeys = [],
 }: GenerateContentRequest): Promise<GeminiResponse> {
   if (apiKeys.length === 0) {
     await loadApiKeys();
   }
 
-  const keys = normalizeKeys([...apiKeys, ...fallbackKeys]);
+  const keys = normalizeKeys([...primaryKeys, ...fallbackKeys, ...apiKeys]);
   const maxAttempts = keys.length || 1;
   let lastError: Error | null = null;
 

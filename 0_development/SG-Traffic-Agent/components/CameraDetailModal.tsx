@@ -211,6 +211,27 @@ const CameraDetailModal: React.FC<CameraDetailModalProps> = ({
           {/* Footer Actions */}
           <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
             <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className={`py-3 px-4 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+                isAnalyzing
+                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                  : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-100'
+              }`}
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Re-analyzing...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  Re-analyze
+                </>
+              )}
+            </button>
+            <button
               onClick={() => onToggleWatchlist(camera.id)}
               className={`flex-1 py-3 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 ${isWatchlisted
                 ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'

@@ -6,9 +6,20 @@ export const REFRESH_INTERVALS = {
   SLOW: 600,   // 10 minutes
 };
 
+export const GEMMA_DEFAULT_MODEL = 'gemma-3-27b-it';
+
 export const AVAILABLE_MODELS = [
-  { id: 'gemma-3-27b-it', name: 'Gemma 3 27B IT (Sample Default)' },
+  { id: GEMMA_DEFAULT_MODEL, name: 'Gemma 3 27B IT (Default Fallback)' },
+  { id: 'gemini-flash-latest', name: 'Gemini 2.5 Flash (Latest)' },
+  { id: 'gemini-flash-lite-latest', name: 'Gemini 2.5 Flash Lite (Latest)' },
+  { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro Preview' },
 ];
+
+export const GEMINI_USER_KEY_MODELS = new Set([
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-3-pro-preview',
+]);
 
 export const DEFAULT_PREFERENCES = {
   refreshInterval: REFRESH_INTERVALS.NORMAL,
@@ -16,7 +27,7 @@ export const DEFAULT_PREFERENCES = {
   showHeatmap: false,
   theme: 'light' as const,
   watchlist: [] as string[],
-  modelId: 'gemma-3-27b-it',
+  modelId: GEMMA_DEFAULT_MODEL,
   apiKey: '',
 };
 
